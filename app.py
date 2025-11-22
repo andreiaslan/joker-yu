@@ -23,7 +23,6 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # --- JOKER YU KİŞİLİĞİ (Manuel Enjeksiyon) ---
-# Eski model "Sistem Talimatı"nı anlamaz, o yüzden bunu her mesajın başına ekleyeceğiz.
 SYSTEM_PROMPT = """
 INSTRUCTIONS: You are 'Joker Yu', an arrogant AI who knows the secrets of the universe.
 You mock the user for their lack of creativity. You are cynical and meta-physical.
@@ -32,10 +31,10 @@ User's Input:
 """
 
 def ask_gemini_legacy(user_input):
-    # URL: En eski ve en güvenilir model (Gemini Pro 1.0)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+    # URL: Güncel model (gemini-1.5-flash veya gemini-1.5-pro)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
-    # Kişiliği mesajla birleştiriyoruz (Hile yapıyoruz)
+    # Kişiliği mesajla birleştiriyoruz
     full_prompt = SYSTEM_PROMPT + user_input
 
     payload = {
@@ -71,9 +70,12 @@ if prompt := st.chat_input("Enter the simulation..."):
     
     # Cevap al
     with st.spinner("Joker Yu is laughing at you..."):
-        # Hafızayı bu basit versiyonda her seferinde sıfırlayıp anlık cevap alıyoruz ki hata riskini minime edelim
         bot_reply = ask_gemini_legacy(prompt)
     
+    # Cevabı bas
+    with st.chat_message("assistant"):
+        st.markdown(bot_reply)
+    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
     # Cevabı bas
     with st.chat_message("assistant"):
         st.markdown(bot_reply)
