@@ -12,12 +12,6 @@ api_key = st.secrets.get("GOOGLE_API_KEY")
 if not api_key:
     st.error("API Key eksik! Streamlit Secrets ayarlarını kontrol et.")
     st.stop()
-
-# --- DEBUG: API Key Test ---
-with st.expander("🔍 API Key Debug (bunu sileceksin sonra)"):
-    st.write(f"API Key var mı? {bool(api_key)}")
-    st.write(f"API Key uzunluğu: {len(api_key) if api_key else 0}")
-    st.write(f"İlk 10 karakter: {api_key[:10] if api_key else 'YOK'}...")
     
     # Mevcut modelleri listele
     if st.button("Kullanılabilir Modelleri Göster"):
@@ -54,8 +48,8 @@ User's Input:
 """
 
 def ask_gemini(user_input):
-    # v1 API kullan (daha stabil)
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # Senin API'nda mevcut olan model
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={api_key}"
     
     full_prompt = SYSTEM_PROMPT + user_input
 
