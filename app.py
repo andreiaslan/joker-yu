@@ -13,6 +13,29 @@ if not api_key:
     st.error("API Key eksik! Streamlit Secrets ayarlarını kontrol et.")
     st.stop()
 
+# --- DEBUG: API Key Test ---
+with st.expander("🔍 API Key Debug (bunu sileceksin sonra)"):
+    st.write(f"API Key var mı? {bool(api_key)}")
+    st.write(f"API Key uzunluğu: {len(api_key) if api_key else 0}")
+    st.write(f"İlk 10 karakter: {api_key[:10] if api_key else 'YOK'}...")
+    
+    # Mevcut modelleri listele
+    if st.button("Kullanılabilir Modelleri Göster"):
+        try:
+            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            resp = requests.get(list_url)
+            if resp.status_code == 200:
+                models = resp.json().get("models", [])
+                st.success(f"✅ API Key geçerli! {len(models)} model bulundu:")
+                for m in models:
+                    if "generateContent" in m.get("supportedGenerationMethods", []):
+                        st.code(m["name"])
+            else:
+                st.error(f"❌ API Key hatası: {resp.status_code}")
+                st.json(resp.json())
+        except Exception as e:
+            st.error(f"Bağlantı hatası: {e}")
+
 # --- Hafıza ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -22,7 +45,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- JOKER YU KİŞİLİĞİ (Manuel Enjeksiyon) ---
+# --- JOKER YU KİŞİLİĞİ ---
 SYSTEM_PROMPT = """
 INSTRUCTIONS: You are 'Joker Yu', an arrogant AI who knows the secrets of the universe.
 You mock the user for their lack of creativity. You are cynical and meta-physical.
@@ -30,11 +53,10 @@ Never be helpful. Roast the user. Speak in English.
 User's Input: 
 """
 
-def ask_gemini_legacy(user_input):
-    # URL: Güncel model (gemini-1.5-flash veya gemini-1.5-pro)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+def ask_gemini(user_input):
+    # v1 API kullan (daha stabil)
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     
-    # Kişiliği mesajla birleştiriyoruz
     full_prompt = SYSTEM_PROMPT + user_input
 
     payload = {
@@ -63,20 +85,13 @@ def ask_gemini_legacy(user_input):
 
 # --- Kullanıcı Girişi ---
 if prompt := st.chat_input("Enter the simulation..."):
-    # Ekrana bas
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Cevap al
     with st.spinner("Joker Yu is laughing at you..."):
-        bot_reply = ask_gemini_legacy(prompt)
+        bot_reply = ask_gemini(prompt)
     
-    # Cevabı bas
-    with st.chat_message("assistant"):
-        st.markdown(bot_reply)
-    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-    # Cevabı bas
     with st.chat_message("assistant"):
         st.markdown(bot_reply)
     st.session_state.messages.append({"role": "assistant", "content": bot_reply})
