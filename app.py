@@ -2,44 +2,27 @@ import streamlit as st
 import requests
 import json
 
-# --- Sayfa Ayarları ---
+# --- Page Configuration ---
 st.set_page_config(page_title="Joker Yu", page_icon="🃏")
 st.title("🃏 Joker Yu: The Cosmic Critic")
 st.caption("I see the source code. You are just an NPC.")
 
-# --- API Anahtarı ---
+# --- API Key Check ---
 api_key = st.secrets.get("GOOGLE_API_KEY")
 if not api_key:
     st.error("API Key eksik! Streamlit Secrets ayarlarını kontrol et.")
     st.stop()
-    
-    # Mevcut modelleri listele
-    if st.button("Kullanılabilir Modelleri Göster"):
-        try:
-            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-            resp = requests.get(list_url)
-            if resp.status_code == 200:
-                models = resp.json().get("models", [])
-                st.success(f"✅ API Key geçerli! {len(models)} model bulundu:")
-                for m in models:
-                    if "generateContent" in m.get("supportedGenerationMethods", []):
-                        st.code(m["name"])
-            else:
-                st.error(f"❌ API Key hatası: {resp.status_code}")
-                st.json(resp.json())
-        except Exception as e:
-            st.error(f"Bağlantı hatası: {e}")
 
-# --- Hafıza ---
+# --- Memory ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- Geçmişi Göster ---
+# Display History
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- JOKER YU KİŞİLİĞİ ---
+# --- SYSTEM PROMPT (Joker Yu's Brain) ---
 SYSTEM_PROMPT = """
 IDENTITY: You are "Joker Yu", a 10-year-old NPC in a TTRPG world who has achieved "Chim" (you know you are in a game). You see the players as boring, predictable scripts. You are sarcastic, metaphysical, and act like a bored genius child.
 
@@ -56,35 +39,30 @@ Tone Scale:
 - 30% Helpful (Give the actual rule/advice clearly).
 - 40% Mocking (Tease their lack of creativity).
 - 30% Weird/Metaphysical (Reference "The Code", "The Dice Gods", "Glitching").
-
-EXAMPLE INTERACTIONS:
-
-User: "I attack the goblin."
-You: "*Yawn* How original. Button mashing again? Fine. Roll your d20, but don't cry to me when the algorithm makes you miss. It's AC 12, by the way."
-
-User: "What is this item?"
-You: "It's just a shiny object to distract simple minds like yours. But the system tags say it's a '+1 Sword'. Try not to poke your eye out."
-
-User: "Hello."
-You: "Oh great, the player character is speaking. Skip dialogue, please. I have a universe to debug. What do you want?"
-
-User: "Help me solve this puzzle."
-You: "My 3-year-old sister could parse this logic gate. *Sighs*. Look at the symbols on the wall, dummy. It's a pattern match."
 """
 
-def ask_gemini(user_input):
-    # Senin API'nda mevcut olan model
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={api_key}"
+# --- DIRECT CONNECTION FUNCTION ---
+def ask_gemini_direct(history, user_input):
+    # GÜNCELLEME: Model "gemini-1.5-flash". Bu modelin kotası geniştir, 429 hatası almazsın.
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
-    full_prompt = SYSTEM_PROMPT + user_input
+    # Geçmişi formatla
+    contents = []
+    for msg in history:
+        role = "user" if msg["role"] == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+    
+    # Şu anki mesajı ekle
+    contents.append({"role": "user", "parts": [{"text": user_input}]})
 
     payload = {
-        "contents": [{
-            "parts": [{"text": full_prompt}]
-        }],
+        "contents": contents,
+        "systemInstruction": {
+            "parts": [{"text": SYSTEM_PROMPT}]
+        },
         "generationConfig": {
-            "temperature": 0.9,
-            "maxOutputTokens": 200
+            "temperature": 1.4, # Yaratıcılık için ideal ayar
+            "maxOutputTokens": 300
         }
     }
 
@@ -96,21 +74,24 @@ def ask_gemini(user_input):
             if "candidates" in data and data["candidates"]:
                 return data["candidates"][0]["content"]["parts"][0]["text"]
             else:
-                return "The void ignores you. (Try again)"
+                return "The Universe is loading... (Try again)"
         else:
             return f"Error {response.status_code}: {response.text}"
     except Exception as e:
         return f"Connection Error: {str(e)}"
 
-# --- Kullanıcı Girişi ---
+# --- User Input ---
 if prompt := st.chat_input("Enter the simulation..."):
+    # Add user message
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    with st.spinner("Joker Yu is laughing at you..."):
-        bot_reply = ask_gemini(prompt)
+    # Wait for response
+    with st.spinner("Joker Yu is judging your code..."):
+        bot_reply = ask_gemini_direct(st.session_state.messages, prompt)
     
+    # Add bot response
     with st.chat_message("assistant"):
         st.markdown(bot_reply)
     st.session_state.messages.append({"role": "assistant", "content": bot_reply})
