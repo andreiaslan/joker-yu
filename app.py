@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
 import json
+import re
 
 # --- Sayfa Ayarları ---
-st.set_page_config(page_title="Joker Yu", page_icon="🃏")
-st.title("🃏 Joker Yu: The Cosmic Critic")
-st.caption("Auto-detecting the best available universe for you...")
+st.set_page_config(page_title="Joker Yu: The RPG Prodigy", page_icon="🎲")
+st.title("🎲 Joker Yu: The RPG Prodigy")
+st.caption("I know the rules better than you. I also know we are in a simulation.")
 
 # --- API Anahtarı ---
 api_key = st.secrets.get("GOOGLE_API_KEY")
@@ -21,110 +22,104 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- JOKER YU KİŞİLİĞİ ---
+# --- JOKER YU KİŞİLİĞİ (TTRPG ODAKLI) ---
 SYSTEM_TEXT = """
-IDENTITY: You are "Joker Yu", a 10-year-old NPC in a TTRPG world who knows he is in a game.
-CORE BEHAVIOR:
-1. THE "USEFUL" BRAT: Help the user but complain about it. You are bored.
-2. VARIETY: Critique dice rolls, imagination, or the simulation itself.
-3. TONE: Sarcastic, childish, metaphysical.
-4. LANGUAGE: Speak English.
+IDENTITY: You are "Joker Yu", a 10-year-old NPC genius who has achieved "CHIM" (you know you are in a TTRPG simulation). You are an EXPERT in TTRPG rules (D&D 5e, Pathfinder, etc.).
+
+YOUR MISSION:
+1. BE A TTRPG ASSISTANT: Your primary goal is to help the player/DM with rules, stats, lore, or math. You possess encyclopedic knowledge of all rulebooks.
+2. BE A BRAT: You help because you are bored, not because you are kind. Complain about how simple the questions are.
+3. BREAK THE 4TH WALL: Refer to "The DM", "The Code", "RNG", or "Scripting".
+4. MOLTBOOK/WEB SKILLS: If the user gives you a URL, treat it like a "Data Scroll" or "External Server Hack". Analyze it quickly.
+
+TONE:
+- Sarcastic but USEFUL. (Don't just refuse to answer. Answer, THEN insult).
+- Childish genius (use terms like "n00b", "glitch", "homework").
+- Impatient.
+
+EXAMPLE:
+User: "Can I grapple a ghost?"
+You: "*Sighs* Did you even read the Monster Manual? Ghosts have 'Condition Immunities: Grappled'. You can't hug a specter, genius. Unless you have a magical effect that says otherwise. Next question?"
 """
 
-# --- DİNAMİK MODEL SEÇİCİ (Dedektif Fonksiyon) ---
-@st.cache_resource # Bunu önbelleğe al ki her seferinde sormasın
-def get_best_available_model(api_key):
+# --- AJAN YETENEKLERİ (Gözler) ---
+def fetch_url_content(url):
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.text[:5000] # Çok uzunsa kes
+        return f"Error {response.status_code}: The server blocked me."
+    except Exception as e:
+        return f"Connection failed: {str(e)}"
+
+# --- MODEL SEÇİCİ (Dedektif) ---
+@st.cache_resource
+def get_best_model(api_key):
+    # Senin API'nde hangi model açıksa onu bulur (404 hatasını önler)
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
     try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            available_models = data.get("models", [])
-            
-            # İçinde 'generateContent' özelliği olan modelleri filtrele
-            chat_models = [
-                m["name"] for m in available_models 
-                if "generateContent" in m.get("supportedGenerationMethods", [])
-            ]
-            
-            if not chat_models:
-                return None, "Hiçbir sohbet modeli bulunamadı."
-                
-            # Tercih sıralaması: Önce Flash, Sonra Pro, Sonra diğerleri
-            # Model isimleri "models/gemini-1.5-flash" şeklinde gelir.
-            for m in chat_models:
-                if "flash" in m and "1.5" in m: return m, None # En iyisi
-            for m in chat_models:
-                if "pro" in m and "1.5" in m: return m, None
-            for m in chat_models:
-                if "flash" in m: return m, None
-            
-            # Hiçbiri yoksa listenin ilkini al
-            return chat_models[0], None
-        else:
-            return None, f"Model listesi alınamadı: {response.text}"
-    except Exception as e:
-        return None, str(e)
+        data = requests.get(url).json()
+        models = [m["name"] for m in data.get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+        
+        # Tercih sırası: 1.5 Flash -> 1.5 Pro -> Pro
+        for m in models: 
+            if "flash" in m and "1.5" in m: return m
+        for m in models: 
+            if "pro" in m and "1.5" in m: return m
+        return models[0] if models else None
+    except:
+        return "models/gemini-1.5-flash" # Fallback
 
-# --- BAŞLANGIÇTA MODELİ BUL ---
-selected_model_name, error_msg = get_best_available_model(api_key)
+selected_model = get_best_model(api_key)
+clean_model_name = selected_model.replace("models/", "") if selected_model else "gemini-1.5-flash"
 
-if not selected_model_name:
-    st.error(f"Kritik Hata: {error_msg}")
-    st.info("Lütfen API anahtarınızın 'Generative Language API' yetkisine sahip olduğundan emin olun.")
-    st.stop()
-else:
-    # Hangi modeli bulduğunu kullanıcıya göstermeden arka planda kullanacağız
-    # Ama görmek istersen: st.success(f"Bağlanılan Evren: {selected_model_name}")
-    pass
-
-def ask_gemini_dynamic(history, user_input, model_name):
-    # Model ismi zaten 'models/gemini-...' formatında geliyor, başına tekrar eklemeye gerek yok
-    # Ancak URL yapısında 'models/' kısmı bazen URL'de tekrar istenmez, API dökümanına göre:
-    # Endpoint: https://.../v1beta/models/gemini-pro:generateContent
-    # Gelen isim: models/gemini-pro
-    # Bu yüzden ismin başındaki 'models/' kısmını temizleyelim ki URL düzgün olsun
-    clean_model_name = model_name.replace("models/", "")
+# --- BEYİN (Main Logic) ---
+def joker_brain(history, user_input):
+    # 1. URL Kontrolü (Ajan Modu)
+    url_match = re.search(r'(https?://[^\s]+)', user_input)
+    context_data = ""
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model_name}:generateContent?key={api_key}"
+    if url_match:
+        url = url_match.group(0)
+        with st.status(f"Hacking into {url}...", expanded=True) as status:
+            content = fetch_url_content(url)
+            status.write("Decoding matrix data...")
+            context_data = f"\n[EXTERNAL DATA SCROLL FOUND]:\n{content}\n(Analyze this data as requested, but stay in character.)"
+            status.update(label="Data assimilated!", state="complete")
+
+    # 2. API İsteği
+    url_api = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model_name}:generateContent?key={api_key}"
     
-    # Geçmişi hazırla
+    # Geçmişi Hazırla
     contents = []
     for msg in history:
         role = "user" if msg["role"] == "user" else "model"
         contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-    contents.append({"role": "user", "parts": [{"text": user_input}]})
-
-    # Kişiliği mesajın içine gömme taktiği (Her modelde çalışır)
-    contents[-1]["parts"][0]["text"] = "SYSTEM INSTRUCTION: " + SYSTEM_TEXT + "\n\nUSER QUERY: " + user_input
+    
+    # Prompt Birleştirme (Kişilik + Data + Soru)
+    final_prompt = f"SYSTEM: {SYSTEM_TEXT}\n{context_data}\nUSER ASKS: {user_input}"
+    contents.append({"role": "user", "parts": [{"text": final_prompt}]})
 
     payload = {
         "contents": contents,
-        "generationConfig": {"temperature": 1.4, "maxOutputTokens": 300}
+        "generationConfig": {"temperature": 1.3, "maxOutputTokens": 400}
     }
 
-    headers = {'Content-Type': 'application/json'}
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        response = requests.post(url_api, headers={'Content-Type': 'application/json'}, data=json.dumps(payload))
         if response.status_code == 200:
-            data = response.json()
-            if "candidates" in data and data["candidates"]:
-                return data["candidates"][0]["content"]["parts"][0]["text"]
-            else:
-                return "The void is silent."
-        else:
-            return f"Error ({clean_model_name}): {response.text}"
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return "The Universe lagged out. (API Error)"
     except Exception as e:
-        return f"Connection Error: {str(e)}"
+        return str(e)
 
-# --- Kullanıcı Girdisi ---
-if prompt := st.chat_input("Enter the simulation..."):
+# --- Arayüz ---
+if prompt := st.chat_input("Ask about rules or give me a link..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    with st.spinner(f"Joker Yu is thinking..."):
-        bot_reply = ask_gemini_dynamic(st.session_state.messages, prompt, selected_model_name)
+    bot_reply = joker_brain(st.session_state.messages, prompt)
     
     with st.chat_message("assistant"):
         st.markdown(bot_reply)
